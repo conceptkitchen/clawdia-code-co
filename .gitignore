@@ -1,0 +1,31 @@
+# Environment
+.env
+.env.local
+
+# Dependencies
+node_modules/
+
+# Bun
+bun.lockb
+
+# Personal config (keep examples, ignore actual)
+config/profile.md
+config/schedule.json
+
+# Runtime files
+*.lock
+*.log
+logs/
+temp/
+uploads/
+session.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+.mcp.json

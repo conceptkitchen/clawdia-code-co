@@ -1,0 +1,32 @@
+{
+  "name": "claude-code-co",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "bun run src/relay.ts",
+    "dev": "bun run --watch src/relay.ts",
+    "setup": "bun run setup/install.ts",
+    "test:telegram": "bun run setup/test-telegram.ts",
+    "test:supabase": "bun run setup/test-supabase.ts",
+    "test:voice": "bun run setup/test-voice.ts",
+    "setup:launchd": "bun run setup/configure-launchd.ts",
+    "setup:services": "bun run setup/configure-services.ts",
+    "setup:verify": "bun run setup/verify.ts",
+    "terminal": "bun run src/terminal-relay.ts",
+    "terminal:dev": "bun run --watch src/terminal-relay.ts",
+    "sync": "bun run src/sync-claude-sessions.ts",
+    "sync:watch": "bun run --watch src/sync-claude-sessions.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.50",
+    "@supabase/supabase-js": "^2.45.0",
+    "grammy": "^1.21.1",
+    "groq-sdk": "^0.8.0",
+    "playwright": "^1.58.2",
+    "playwright-core": "^1.58.2",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
+}
