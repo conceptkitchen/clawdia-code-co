@@ -5,7 +5,8 @@
  *   1. Routine check-in (morning/midday/evening window)
  *   2. Meal nudge (10am/3pm/7pm/9pm)
  *   3. Oura stress alert (if stress is high)
- *   4. Meeting reminder (event within 35 min)
+ *
+ * Meeting reminders are handled separately by event-reminder.ts.
  *
  * Exits after first send. State persists in ~/.claude-relay/heartbeat-state.json.
  *
@@ -24,7 +25,6 @@ import {
 } from "../src/state.ts";
 import {
   getOuraStress,
-  getUpcomingEvents,
   getCalendarEvents,
   getActiveGoals,
   getOuraSleep,
@@ -186,28 +186,6 @@ Context (use lightly, don't dump all of this):
       }
     } catch (e) {
       console.error("Stress check failed:", e);
-    }
-  }
-
-  // --- Priority 4: Meeting reminder ---
-  if (!sent) {
-    try {
-      const upcoming = await getUpcomingEvents(35);
-      if (upcoming) {
-        // Check if we already reminded for this event text
-        const eventKey = upcoming.substring(0, 50);
-        if (!state.meetingReminders.includes(eventKey)) {
-          console.log("Meeting reminder triggered");
-          const message = `💙 Heads up, you have something coming up in the next 30 minutes:\n\n${upcoming}`;
-          sent = await sendTelegram(message);
-          if (sent) {
-            state.meetingReminders.push(eventKey);
-            console.log("Sent meeting reminder");
-          }
-        }
-      }
-    } catch (e) {
-      console.error("Meeting check failed:", e);
     }
   }
 

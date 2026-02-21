@@ -201,6 +201,68 @@ export async function getUpcomingEvents(minutes: number = 35): Promise<string> {
 }
 
 // ============================================================
+// CALENDAR (structured)
+// ============================================================
+
+export interface CalendarEvent {
+  title: string;
+  startTime: Date;
+  location: string;
+}
+
+export async function getUpcomingEventsStructured(minutes: number = 35): Promise<CalendarEvent[]> {
+  const rawOutput = await runIcalBuddy([
+    "-n",
+    "-f",
+    "-ea",
+    "-nc",
+    "-b", "- ",
+    "-ps", "| | ",
+    "-po", "title,datetime,location",
+    "eventsToday",
+  ]);
+  if (!rawOutput) return [];
+
+  const output = stripAnsi(rawOutput);
+  const now = new Date();
+  const cutoff = new Date(now.getTime() + minutes * 60 * 1000);
+
+  const events = output.split(/^- /m).filter(Boolean);
+  const results: CalendarEvent[] = [];
+
+  for (const event of events) {
+    const lines = event.trim().split("\n");
+    const title = lines[0]?.trim() || "";
+
+    // Extract start time
+    const timeMatch = event.match(/(\d{1,2}:\d{2}\s*(?:AM|PM))\s*-/i);
+    if (!timeMatch) continue;
+
+    const startTimeStr = timeMatch[1].trim();
+    const parts = startTimeStr.split(/\s+/);
+    const ampm = parts[parts.length - 1];
+    const timePart = parts[0];
+    const [h, m] = timePart.split(":").map(Number);
+    let hours = h;
+    if (ampm.toUpperCase() === "PM" && h !== 12) hours += 12;
+    if (ampm.toUpperCase() === "AM" && h === 12) hours = 0;
+
+    const startTime = new Date(now);
+    startTime.setHours(hours, m, 0, 0);
+
+    if (startTime > now && startTime <= cutoff) {
+      // Extract location if present (line starting with "location:")
+      const locMatch = event.match(/location:\s*(.+)/i);
+      const location = locMatch ? locMatch[1].trim() : "";
+
+      results.push({ title, startTime, location });
+    }
+  }
+
+  return results;
+}
+
+// ============================================================
 // SUPABASE (goals & facts)
 // ============================================================
 

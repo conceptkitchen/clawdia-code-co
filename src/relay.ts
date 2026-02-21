@@ -60,6 +60,7 @@ let activeQuery: AsyncGenerator<SDKMessage> | null = null;
 let abortController: AbortController | null = null;
 let currentModel = "claude-opus-4-6";
 let drivingMode = false;
+let toolStream = true;
 let currentCtx: Context | null = null;
 
 // Message queue — hold incoming while a query is active
@@ -525,6 +526,8 @@ bot.command("restart", async (ctx) => {
   await appendSessionLog("telegram", "assistant", "[RELAY RESTART — session file preserved, agent will read back on startup]");
   await appendDailyNote("telegram", "Relay restarted via /restart command");
   await ctx.reply("Restarting... back in a few seconds.");
+  // Stop polling BEFORE spawning the new instance to avoid 409 conflict
+  await bot.stop();
   await releaseLock("bot");
   const child = Bun.spawn(["bun", "run", "src/relay.ts"], {
     cwd: PROJECT_ROOT,
@@ -532,7 +535,7 @@ bot.command("restart", async (ctx) => {
     env: process.env,
   });
   child.unref();
-  setTimeout(() => process.exit(0), 1000);
+  setTimeout(() => process.exit(0), 500);
 });
 
 // ============================================================
@@ -609,6 +612,7 @@ bot.command("help", async (ctx) => {
     `⚙️ System\n` +
     `/model opus|sonnet|haiku — switch model\n` +
     `/drive — toggle voice replies\n` +
+    `/stream — toggle tool use streaming\n` +
     `/new — fresh session\n` +
     `/stop — abort current task\n` +
     `/restart — restart relay\n` +
@@ -642,6 +646,12 @@ bot.command("model", async (ctx) => {
   } else {
     await ctx.reply(`Current model: ${currentModel}\n\nSwitch: /model opus | sonnet | haiku`);
   }
+});
+
+// Tool stream toggle
+bot.command("stream", async (ctx) => {
+  toolStream = !toolStream;
+  await ctx.reply(toolStream ? "🔧 Tool streaming ON" : "🔇 Tool streaming OFF");
 });
 
 // ============================================================

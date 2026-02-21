@@ -34,6 +34,7 @@ export interface HeartbeatState {
   routineCheckins: RoutineCheckins;
   mealNudges: MealNudges;
   meetingReminders: string[];  // event IDs already reminded
+  eventReminders: string[];    // keys like "Team Standup|09:30|30min"
   lastBriefing: string;        // ISO date of last briefing
   lastOuraUpdate: string;      // ISO timestamp
   lastAlive: string;           // ISO timestamp
@@ -45,6 +46,7 @@ function freshState(): HeartbeatState {
     routineCheckins: { morning: false, midday: false, evening: false },
     mealNudges: { "10am": false, "3pm": false, "7pm": false, "9pm": false },
     meetingReminders: [],
+    eventReminders: [],
     lastBriefing: "",
     lastOuraUpdate: "",
     lastAlive: new Date().toISOString(),
@@ -70,6 +72,7 @@ export async function loadState(): Promise<HeartbeatState> {
       state.routineCheckins = { morning: false, midday: false, evening: false };
       state.mealNudges = { "10am": false, "3pm": false, "7pm": false, "9pm": false };
       state.meetingReminders = [];
+      state.eventReminders = [];
       state.todayDate = todayStr();
     }
 

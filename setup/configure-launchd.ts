@@ -167,6 +167,13 @@ const SERVICES: Record<string, ServiceConfig> = {
     startInterval: 300, // every 5 minutes
     description: "Sync raw Claude sessions to Supabase (every 5 min)",
   },
+  reminder: {
+    label: "com.claude.event-reminder",
+    script: "examples/event-reminder.ts",
+    keepAlive: false,
+    startInterval: 300, // every 5 minutes
+    description: "Calendar event reminders (every 5 min)",
+  },
 };
 
 async function installService(name: string, config: ServiceConfig): Promise<boolean> {
@@ -234,7 +241,7 @@ async function main() {
     const config = SERVICES[name];
     if (!config) {
       console.log(`  ${FAIL} Unknown service: ${name}`);
-      console.log(`      ${dim("Available: relay, checkin, briefing, reflection, sync, all")}`);
+      console.log(`      ${dim("Available: relay, checkin, briefing, reflection, sync, reminder, all")}`);
       allOk = false;
       continue;
     }
