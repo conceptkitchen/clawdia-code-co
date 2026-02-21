@@ -1,304 +1,246 @@
-# Claude Telegram Relay — Setup Guide
+# Claude Code Co — Setup Playbook
 
-> Claude Code reads this file automatically. Walk the user through setup one phase at a time.
-> Ask for what you need, configure everything yourself, and confirm each step works before moving on.
+> This file is read by Claude Code on startup. It contains step-by-step instructions
+> for getting a new user's agent up and running. Guide them through it conversationally —
+> one section at a time, confirming each piece works before continuing.
 
-## How This Works
+## Overview
 
-This project turns Telegram into a personal AI assistant powered by Claude.
+Claude Code Co is a three-channel AI agent relay: Telegram, Terminal, and raw Claude CLI sessions.
+All three channels share persistent memory via Supabase and a local brain directory.
 
-The user cloned this repo (or gave you the link). Your job: guide them through setup conversationally. Ask questions, save their answers to `.env`, test each step, move on.
+Your role: walk the user through configuration interactively. Collect credentials, write config files,
+run tests, troubleshoot. Never present the whole guide at once — take it section by section.
 
-Do not dump all phases at once. Start with Phase 1. When it works, move to Phase 2. Let the user control the pace.
-
-If this is a fresh clone, run `bun run setup` first to install dependencies and create `.env`.
-
----
-
-## Phase 1: Telegram Bot (~3 min)
-
-**You need from the user:**
-- A Telegram bot token from @BotFather
-- Their personal Telegram user ID
-
-**What to tell them:**
-1. Open Telegram, search for @BotFather, send `/newbot`
-2. Pick a display name and a username ending in "bot"
-3. Copy the token BotFather gives them
-4. Get their user ID by messaging @userinfobot on Telegram
-
-**What you do:**
-1. Run `bun run setup` if `.env` does not exist yet
-2. Save `TELEGRAM_BOT_TOKEN` and `TELEGRAM_USER_ID` in `.env`
-3. Run `bun run test:telegram` to verify — it sends a test message to the user
-
-**Done when:** Test message arrives on Telegram.
+Before anything else, check if dependencies are installed. If not: `bun run setup`.
 
 ---
 
-## Phase 2: Database & Memory — Supabase (~12 min)
+## 1. Telegram Credentials
 
-Your bot's memory lives in Supabase: conversation history, facts, goals, and semantic search.
+The Telegram channel needs two values: a bot token and the user's numeric chat ID.
 
-### Step 1: Create Supabase Project
+**Collect from the user:**
+- Bot token — they create one by talking to `@BotFather` on Telegram (send `/newbot`, follow prompts, copy the token)
+- Their numeric user ID — they can get it by messaging `@userinfobot` on Telegram
 
-**You need from the user:**
-- Supabase Project URL
-- Supabase anon public key
+**Configure:**
+1. If `.env` doesn't exist yet, run `bun run setup`
+2. Write both values to `.env`: `TELEGRAM_BOT_TOKEN` and `TELEGRAM_USER_ID`
+3. Verify with `bun run test:telegram` — this fires a test message to their chat
 
-**What to tell them:**
-1. Go to supabase.com, create a free account
-2. Create a new project (any name, any region close to them)
-3. Wait ~2 minutes for it to provision
-4. Go to Project Settings > API
-5. Copy: Project URL and anon public key
+Move on once the test message lands in their Telegram.
 
-**What you do:**
-1. Save `SUPABASE_URL` and `SUPABASE_ANON_KEY` to `.env`
+---
 
-### Step 2: Connect Supabase MCP
+## 2. Supabase (Persistent Memory)
 
-This lets Claude Code manage the database directly — run queries, deploy functions, apply migrations.
+The agent stores conversations, learned facts, goals, and embeddings in Supabase.
+This gives it memory that survives restarts and works across all three channels.
 
-**What to tell them:**
-1. Go to supabase.com/dashboard/account/tokens
-2. Create an access token, copy it
+### 2a. Project & Keys
 
-**What you do:**
+**Collect from the user:**
+- Their Supabase project URL (found under Project Settings > API)
+- The `anon` public key from the same page
+
+If they don't have a Supabase account yet, point them to supabase.com to create one and spin up a project.
+
+**Configure:**
+Write `SUPABASE_URL` and `SUPABASE_ANON_KEY` to `.env`.
+
+### 2b. Supabase MCP Server
+
+Adding Supabase as an MCP server lets you manage the database directly from Claude Code.
+
+**Collect:** A Supabase access token (from supabase.com/dashboard/account/tokens)
+
+**Configure:**
 ```
 claude mcp add supabase -- npx -y @supabase/mcp-server-supabase@latest --access-token ACCESS_TOKEN
 ```
 
-### Step 3: Create Tables
+### 2c. Database Schema
 
-Use the Supabase MCP to run the schema:
-1. Read `db/schema.sql`
-2. Execute it via `execute_sql` (or tell the user to paste it in the SQL Editor)
-3. Run `bun run test:supabase` to verify tables exist
+Apply the schema to their project:
+1. Open `db/schema.sql` and run it via the Supabase MCP's `execute_sql` tool
+2. If MCP isn't cooperating, have them paste the SQL into the Supabase SQL Editor manually
+3. Confirm with `bun run test:supabase`
 
-### Step 4: Set Up Semantic Search
+### 2d. Embeddings & Semantic Search
 
-This gives your bot real memory — it finds relevant past conversations automatically.
+Embeddings let the agent recall relevant past conversations automatically.
 
-**You need from the user:**
-- An OpenAI API key (for generating text embeddings)
+**Collect:** An OpenAI API key (from platform.openai.com > API keys)
 
-**What to tell them:**
-1. Go to platform.openai.com, create an account
-2. Go to API keys, create a new key, copy it
-3. The key will be stored in Supabase, not on your computer. It stays with your database.
+**Configure:**
+1. Deploy both edge functions through the Supabase MCP:
+   - `supabase/functions/embed/index.ts` (generates embeddings)
+   - `supabase/functions/search/index.ts` (queries them)
+2. The OpenAI key lives in Supabase, not locally. Tell the user to add it:
+   - Dashboard > Project Settings > Edge Functions > Secrets > add `OPENAI_API_KEY`
+3. Wire up automatic embedding via database webhooks:
+   - Dashboard > Database > Webhooks > Create:
+     - `embed_messages` — table: `messages`, event: INSERT, function: `embed`
+     - `embed_memory` — table: `memory`, event: INSERT, function: `embed`
 
-**What you do:**
-1. Deploy the embed Edge Function via Supabase MCP (`deploy_edge_function` with `supabase/functions/embed/index.ts`)
-2. Deploy the search Edge Function (`supabase/functions/search/index.ts`)
-3. Tell the user to store their OpenAI key in Supabase:
-   - Go to Supabase dashboard > Project Settings > Edge Functions
-   - Under Secrets, add: `OPENAI_API_KEY` = their key
-4. Set up database webhooks so embeddings are generated automatically:
-   - Go to Supabase dashboard > Database > Webhooks > Create webhook
-   - Name: `embed_messages`, Table: `messages`, Events: INSERT
-   - Type: Supabase Edge Function, Function: `embed`
-   - Create a second webhook: `embed_memory`, Table: `memory`, Events: INSERT
-   - Same Edge Function: `embed`
+### 2e. Confirm
 
-### Step 5: Verify
-
-Run `bun run test:supabase` to confirm:
-- Tables exist (messages, memory, logs)
-- Edge Functions respond
-- Embedding generation works
-
-**Done when:** `bun run test:supabase` passes and a test insert into `messages` gets an embedding.
+Run `bun run test:supabase`. All three tables should exist (messages, memory, logs),
+edge functions should respond, and a test insert should generate an embedding vector.
 
 ---
 
-## Phase 2.5: Connect Tools (~5 min)
+## 3. Tool Integrations (MCP Servers)
 
-MCP servers give Claude real tool access — browser automation, GitHub, Vercel, and more.
-Playwright is pre-configured in the relay code. The others are optional.
+MCP servers extend what the agent can do — browse the web, manage GitHub repos, deploy to Vercel.
 
-### Playwright (browser automation)
-Already configured — no action needed. The relay auto-starts Playwright MCP on every query.
-The user can log into sites (Gmail, LinkedIn, etc.) in the Playwright browser and the agent can interact with them.
+### Playwright (Browser)
 
-### GitHub CLI (optional)
-Lets the agent create PRs, manage issues, check CI status.
+Pre-configured in the relay code. No setup needed. The agent spawns a Playwright browser
+automatically when processing queries. Users can log into any site in that browser
+and the agent will have access to those sessions.
 
-**You need from the user:**
-- A GitHub personal access token with `repo` scope
+### GitHub (Optional)
 
-**What to tell them:**
-1. Go to github.com/settings/tokens
-2. Generate new token (classic), select `repo` scope
-3. Copy the token
+Gives the agent access to repos, PRs, issues, and CI.
 
-**What you do:**
-1. Save `GITHUB_PAT` to `.env`
-2. Run:
+**Collect:** A personal access token with `repo` scope (from github.com/settings/tokens)
+
+**Configure:**
+1. Add `GITHUB_PAT` to `.env`
+2. Register the MCP server:
    ```
    claude mcp add github -e GITHUB_PERSONAL_ACCESS_TOKEN=THEIR_TOKEN -- npx -y @modelcontextprotocol/server-github
    ```
 
-### Vercel (optional)
-Lets the agent deploy, manage environment variables, check logs.
+### Vercel (Optional)
 
-**You need from the user:**
-- A Vercel API token
+Gives the agent access to deployments, env vars, and logs.
 
-**What to tell them:**
-1. Go to vercel.com/account/tokens
-2. Create a new token, copy it
+**Collect:** An API token (from vercel.com/account/tokens)
 
-**What you do:**
-1. Save `VERCEL_API_TOKEN` to `.env`
-2. Run:
+**Configure:**
+1. Add `VERCEL_API_TOKEN` to `.env`
+2. Register the MCP server:
    ```
    claude mcp add vercel -e VERCEL_API_TOKEN=THEIR_TOKEN -- npx -y vercel-mcp-server
    ```
 
-**Done when:** `claude mcp list` shows the servers the user chose to add.
+Verify registered servers with `claude mcp list`.
 
 ---
 
-## Phase 3: Personalize (~3 min)
+## 4. Identity & Profile
+
+The agent adapts its tone and context based on a profile file loaded with every message.
 
 **Ask the user:**
-- Their first name
-- Their timezone (e.g., America/New_York, Europe/Berlin)
-- What they do for work (one sentence)
-- Any time constraints (e.g., "I pick up my kid at 3pm on weekdays")
-- How they like to be communicated with (brief/detailed, casual/formal)
+- First name
+- Timezone (e.g. `America/New_York`, `Europe/Berlin`)
+- What they do (one sentence)
+- Schedule constraints they want the agent to know about
+- Communication preference: terse vs. detailed, casual vs. formal
 
-**What you do:**
-1. Save `USER_NAME` and `USER_TIMEZONE` to `.env`
+**Configure:**
+1. Set `USER_NAME` and `USER_TIMEZONE` in `.env`
 2. Copy `config/profile.example.md` to `config/profile.md`
-3. Fill in `config/profile.md` with their answers — the bot loads this on every message
-
-**Done when:** `config/profile.md` exists with their details.
+3. Fill in their answers — the relay loads this file on every incoming message
 
 ---
 
-## Phase 4: Test (~2 min)
+## 5. Smoke Test
 
-**What you do:**
-1. Run `bun run start`
-2. Tell the user to open Telegram and send a test message to their bot
-3. Wait for confirmation it responded
-4. Press Ctrl+C to stop
+Time to see it work end-to-end.
 
-**Troubleshooting if it fails:**
-- Wrong bot token → re-check with BotFather
-- Wrong user ID → re-check with @userinfobot
-- Claude CLI not found → `npm install -g @anthropic-ai/claude-code`
-- Bun not installed → `curl -fsSL https://bun.sh/install | bash`
+1. Start the relay: `bun run start`
+2. Have the user send any message to their bot on Telegram
+3. Confirm it responds with context-aware output
+4. Ctrl+C to stop
 
-**Done when:** User confirms their bot responded on Telegram.
+**If something breaks:**
+- Bot doesn't respond → double-check the token and user ID in `.env`
+- `claude` command not found → they need Claude Code installed: `npm install -g @anthropic-ai/claude-code`
+- `bun` not found → install it: `curl -fsSL https://bun.sh/install | bash`
 
 ---
 
-## Phase 5: Always On (~5 min)
+## 6. Background Service
 
-Make the bot run in the background, start on boot, restart on crash.
+The relay should run persistently — surviving terminal closes and rebooting with the machine.
 
-**macOS:**
+**macOS (launchd):**
 ```
 bun run setup:launchd -- --service relay
 ```
-This auto-generates a plist with correct paths and loads it into launchd.
+Generates a plist, loads it into launchd. Verify: `launchctl list | grep com.claude`
 
-**Linux/Windows:**
+**Linux (PM2):**
 ```
 bun run setup:services -- --service relay
 ```
-Uses PM2 for process management.
-
-**Verify:** `launchctl list | grep com.claude` (macOS) or `npx pm2 status` (Linux/Windows)
-
-**Done when:** Bot runs in the background and survives a terminal close.
+Verify: `npx pm2 status`
 
 ---
 
-## Phase 6: Proactive AI (Optional, ~5 min)
+## 7. Scheduled Agents (Optional)
 
-Two features that turn a chatbot into an assistant.
+These turn the bot from reactive to proactive — it reaches out on its own when appropriate.
 
 ### Smart Check-ins
-`examples/smart-checkin.ts` — runs on a schedule, gathers context, asks Claude if it should reach out. If yes, sends a brief message. If no, stays silent.
+
+`examples/smart-checkin.ts` runs every 15 minutes during waking hours. It checks context
+(health data, calendar, time of day) and decides whether to send a brief message.
+If there's nothing worth saying, it stays quiet. If the user is in an active conversation,
+it backs off automatically.
 
 ### Morning Briefing
-`examples/morning-briefing.ts` — sends a daily summary. Pattern file with placeholder data fetchers.
 
-**macOS — schedule both:**
-```
-bun run setup:launchd -- --service all
-```
+`examples/morning-briefing.ts` sends three messages each morning: a health + calendar summary,
+AI-generated daily priorities, and a trend report on AI/tech news.
 
-**Linux/Windows — schedule both:**
+**Schedule both:**
 ```
-bun run setup:services -- --service all
+bun run setup:launchd -- --service all    # macOS
+bun run setup:services -- --service all   # Linux
 ```
 
-**Done when:** User has scheduled services running, or explicitly skips this phase.
+Skip this section if the user doesn't want proactive messages.
 
 ---
 
-## Phase 7: Voice Transcription (Optional, ~5 min)
+## 8. Voice Messages (Optional)
 
-Lets the bot understand voice messages sent on Telegram.
+Adds speech-to-text so the agent can process Telegram voice notes.
 
-**Ask the user which option they prefer:**
+**Two options — ask the user which they prefer:**
 
-### Option A: Groq (Recommended — free cloud API)
-- State-of-the-art Whisper model, sub-second speed
-- Free: 2,000 transcriptions per day, no credit card
-- Requires internet connection
+### Groq (cloud, recommended)
+Fast cloud transcription using Whisper. Free tier handles 2,000 requests/day.
 
-**What to tell them:**
-1. Go to console.groq.com and create a free account
-2. Go to API Keys, create a new key, copy it
+- User creates an account at console.groq.com, generates an API key
+- Set `VOICE_PROVIDER=groq` and `GROQ_API_KEY` in `.env`
+- Test: `bun run test:voice`
 
-**What you do:**
-1. Save `VOICE_PROVIDER=groq` and `GROQ_API_KEY` to `.env`
-2. Run `bun run test:voice` to verify
+### Local Whisper (offline)
+Runs entirely on their machine. No account needed but requires ffmpeg and whisper-cpp.
 
-### Option B: Local Whisper (offline, private)
-- Runs entirely on their computer, no account needed
-- Requires ffmpeg and whisper-cpp installed
-- First run downloads a 142MB model file
-
-**What you do:**
-1. Check ffmpeg: `ffmpeg -version` (install: `brew install ffmpeg` or `apt install ffmpeg`)
-2. Check whisper-cpp: `whisper-cpp --help` (install: `brew install whisper-cpp` or build from source)
-3. Download model: `curl -L -o ~/whisper-models/ggml-base.en.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin`
-4. Save `VOICE_PROVIDER=local`, `WHISPER_BINARY`, `WHISPER_MODEL_PATH` to `.env`
-5. Run `bun run test:voice` to verify
-
-**Done when:** `bun run test:voice` passes.
+- Install deps: `brew install ffmpeg whisper-cpp` (macOS) or build from source
+- Download model: `curl -L -o ~/whisper-models/ggml-base.en.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin`
+- Set `VOICE_PROVIDER=local`, `WHISPER_BINARY`, and `WHISPER_MODEL_PATH` in `.env`
+- Test: `bun run test:voice`
 
 ---
 
-## After Setup
+## Wrap-Up
 
-Run the full health check:
+Run the full health check to see everything at a glance:
+
 ```
 bun run setup:verify
 ```
 
-Summarize what was set up and what is running. Remind the user:
-- Test by sending a message on Telegram
-- Their bot runs in the background (if Phase 5 was done)
-- Come back to this project folder and type `claude` anytime to make changes
-
----
-
-## After Setup
-
-Run the full health check:
-```
-bun run setup:verify
-```
-
-Summarize what was set up and what is running. Remind the user:
-- Test by sending a message on Telegram
-- Their bot runs in the background (if Phase 5 was done)
-- Come back to this project folder and type `claude` anytime to make changes
+Give the user a summary of what's configured and running. Remind them:
+- Send a Telegram message to test the bot live
+- If Phase 6 is done, the relay is running in the background already
+- They can return to this directory and run `claude` to modify anything
