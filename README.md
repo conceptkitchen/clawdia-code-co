@@ -1,4 +1,4 @@
-# Claude Code Co
+# Clawdia Code Co
 
 AI agent on Telegram and terminal. Persistent identity, real tools, semantic memory, three synchronized channels. Not a chatbot — an AI with hands.
 

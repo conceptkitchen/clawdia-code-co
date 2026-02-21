@@ -1,4 +1,4 @@
-# Claude Code Co — Setup Playbook
+# Clawdia Code Co — Setup Playbook
 
 > This file is read by Claude Code on startup. It contains step-by-step instructions
 > for getting a new user's agent up and running. Guide them through it conversationally —
@@ -6,7 +6,7 @@
 
 ## Overview
 
-Claude Code Co is a three-channel AI agent relay: Telegram, Terminal, and raw Claude CLI sessions.
+Clawdia Code Co is a three-channel AI agent relay: Telegram, Terminal, and raw Claude CLI sessions.
 All three channels share persistent memory via Supabase and a local brain directory.
 
 Your role: walk the user through configuration interactively. Collect credentials, write config files,
