@@ -118,6 +118,19 @@ export async function getOuraActivity(): Promise<string> {
 // ============================================================
 
 async function runIcalBuddy(args: string[]): Promise<string> {
+  // Under launchd, Bun can't spawn icalBuddy due to macOS TCC blocking
+  // calendar access for Bun's child processes. Use pre-fetched cache from
+  // scripts/calendar-wrapper.sh when available.
+  const cacheFile = process.env.ICALBUDDY_CACHE_FILE;
+  if (cacheFile) {
+    try {
+      const cached = await Bun.file(cacheFile).text();
+      return cached.trim();
+    } catch {
+      return "";
+    }
+  }
+
   const icalBuddyPath = "/opt/homebrew/bin/icalBuddy";
   try {
     const proc = spawn([icalBuddyPath, ...args], {
@@ -139,7 +152,6 @@ export async function getCalendarEvents(): Promise<string> {
     "-ea",
     "-nc",
     "-b", "- ",
-    "-ps", "| | ",
     "-po", "title,datetime",
     "eventsToday",
   ]);
@@ -160,7 +172,6 @@ export async function getUpcomingEvents(minutes: number = 35): Promise<string> {
     "-ea",
     "-nc",
     "-b", "- ",
-    "-ps", "| | ",
     "-po", "title,datetime,location,notes,attendees",
     "eventsToday",
   ]);
@@ -217,7 +228,6 @@ export async function getUpcomingEventsStructured(minutes: number = 35): Promise
     "-ea",
     "-nc",
     "-b", "- ",
-    "-ps", "| | ",
     "-po", "title,datetime,location",
     "eventsToday",
   ]);

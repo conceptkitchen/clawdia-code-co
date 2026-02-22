@@ -51,6 +51,7 @@ function generatePlist(opts: {
   keepAlive: boolean;
   calendarIntervals?: { Hour: number; Minute: number; Weekday?: number }[];
   startInterval?: number;
+  needsCalendar?: boolean;
 }): string {
   const bunPath = findBunSync;
 
@@ -86,7 +87,8 @@ function generatePlist(opts: {
     <string>${opts.label}</string>
 
     <key>ProgramArguments</key>
-    <array>
+    <array>${opts.needsCalendar ? `
+        <string>${PROJECT_ROOT}/scripts/calendar-wrapper.sh</string>` : ""}
         <string>${bunPath}</string>
         <string>run</string>
         <string>${opts.script}</string>
@@ -129,6 +131,7 @@ interface ServiceConfig {
   keepAlive: boolean;
   calendarIntervals?: { Hour: number; Minute: number; Weekday?: number }[];
   startInterval?: number; // seconds between runs
+  needsCalendar?: boolean; // use calendar-wrapper.sh to bypass macOS TCC
   description: string;
 }
 
@@ -144,6 +147,7 @@ const SERVICES: Record<string, ServiceConfig> = {
     script: "examples/smart-checkin.ts",
     keepAlive: false,
     startInterval: 900, // every 15 minutes, script decides whether to send
+    needsCalendar: true,
     description: "Smart check-ins (every 15 min, 6 AM - 11 PM)",
   },
   briefing: {
@@ -151,6 +155,7 @@ const SERVICES: Record<string, ServiceConfig> = {
     script: "examples/morning-briefing.ts",
     keepAlive: false,
     calendarIntervals: [{ Hour: 6, Minute: 30 }],
+    needsCalendar: true,
     description: "Morning briefing (daily at 6:30 AM)",
   },
   reflection: {
@@ -172,6 +177,7 @@ const SERVICES: Record<string, ServiceConfig> = {
     script: "examples/event-reminder.ts",
     keepAlive: false,
     startInterval: 300, // every 5 minutes
+    needsCalendar: true,
     description: "Calendar event reminders (every 5 min)",
   },
 };

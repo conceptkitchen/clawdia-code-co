@@ -261,7 +261,10 @@ All Telegram brain commands work in the terminal relay too, plus:
 │   ├── smart-checkin.ts                  # Scheduled proactive check-ins
 │   ├── morning-briefing.ts              # Daily briefing
 │   ├── weekly-reflection.ts             # Weekly review
+│   ├── event-reminder.ts               # Calendar event reminders (30min + 10min)
 │   └── memory.ts                         # Memory persistence patterns
+├── scripts/
+│   └── calendar-wrapper.sh              # TCC workaround for icalBuddy under launchd
 ├── setup/                                # Install, test, verify, launchd
 ├── supabase/functions/
 │   ├── embed/index.ts                    # Auto-embedding Edge Function
@@ -671,9 +674,20 @@ Install with `bun run setup:launchd -- --service <name>`.
 | `briefing` | `com.claude.morning-briefing` | Daily at 6:30 AM | Morning briefing |
 | `reflection` | `com.claude.weekly-reflection` | Sunday at 8:00 AM | Weekly feedback review |
 | `sync` | `com.claude.session-sync` | Every 5 min | Claude CLI session sync |
+| `reminder` | `com.claude.event-reminder` | Every 5 min | Calendar reminders (30min + 10min before events) |
 | `all` | (installs all above) | | |
 
 Verify: `launchctl list | grep com.claude`
+
+### Calendar Event Reminders
+
+The `reminder` service checks your macOS calendar every 5 minutes and sends Telegram notifications at two windows before each event:
+- **~30 minutes before** — heads-up to prepare
+- **~10 minutes before** — final reminder
+
+Requires `icalBuddy` (`brew install ical-buddy`). When you first run icalBuddy from Terminal, macOS will prompt for Calendar access — approve it.
+
+**macOS TCC note:** Services that read your calendar (`reminder`, `checkin`, `briefing`) use `scripts/calendar-wrapper.sh` to pre-fetch calendar data. This is necessary because macOS TCC blocks calendar access when icalBuddy is spawned as a child of Bun under launchd. The wrapper runs icalBuddy directly (which has Calendar permission), caches the output, and passes it to the Bun script. This is handled automatically by `bun run setup:launchd`.
 
 Linux/Windows uses PM2 via `bun run setup:services`. See `daemon/README-WINDOWS.md` for Windows options.
 
@@ -751,6 +765,8 @@ Found a security issue? Open a private issue on GitHub or contact the maintainer
 | Supabase connection fails | Check URL and anon key, run `bun run test:supabase` |
 | Embeddings not generating | Check OpenAI key in Supabase Edge Function secrets |
 | Voice not working | Run `bun run test:voice`, check VOICE_PROVIDER in .env |
+| Calendar reminders not firing | Reinstall with `bun run setup:launchd -- --service reminder` — uses calendar wrapper to bypass TCC |
+| icalBuddy "No calendars" | Run `icalBuddy eventsToday` from Terminal first to grant Calendar access, then reinstall the service |
 | Lock file stale | Delete `~/.claude-relay/*.lock` |
 | Session sync not running | Check `launchctl list \| grep session-sync` |
 | Full health check | `bun run setup:verify` |
