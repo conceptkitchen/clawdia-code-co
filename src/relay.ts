@@ -484,10 +484,11 @@ bot.use(async (ctx, next) => {
   const userId = ctx.from?.id.toString();
   if (userId !== ALLOWED_USER_ID) {
     console.log(`Unauthorized: ${userId}`);
-    await ctx.reply("This bot is private.");
+    await ctx.reply("This bot is private.").catch(() => {});
     return;
   }
-  if (isRateLimited()) {
+  // Skip rate limiting for callback queries (approval buttons)
+  if (!ctx.callbackQuery && isRateLimited()) {
     console.warn(`Rate limited: ${RATE_LIMIT_MAX} messages in ${RATE_LIMIT_WINDOW / 1000}s`);
     await ctx.reply("Slow down — too many messages. Try again in a minute.");
     return;
@@ -498,6 +499,14 @@ bot.use(async (ctx, next) => {
 // ============================================================
 // COMMAND HANDLERS
 // ============================================================
+
+// Kill — shut down the bot process entirely
+bot.command("kill", async (ctx) => {
+  await ctx.reply("💀 Shutting down. Run `bun run start` in terminal to bring me back.");
+  await bot.stop();
+  await releaseLock("bot");
+  process.exit(0);
+});
 
 // Stop — abort active query
 bot.command("stop", async (ctx) => {
@@ -615,6 +624,7 @@ bot.command("help", async (ctx) => {
     `/stream — toggle tool use streaming\n` +
     `/new — fresh session\n` +
     `/stop — abort current task\n` +
+    `/kill — shut down bot process\n` +
     `/restart — restart relay\n` +
     `/status — system info`
   );
