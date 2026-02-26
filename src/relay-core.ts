@@ -32,7 +32,7 @@ export const HANDOFF_FILE = join(CLAWDIA_DIR, "memory", "HANDOFF.md");
 // ============================================================
 
 export function todayStr(): string {
-  return new Date().toISOString().split("T")[0];
+  return new Date().toLocaleDateString("en-CA", { timeZone: process.env.USER_TIMEZONE || "UTC" });
 }
 
 export function timeStr(): string {
@@ -282,8 +282,8 @@ export const DANGEROUS_PATTERNS = [
   /\bssh\s+.*&&/, /\bssh\s+.*[|;]/,
   // Container escapes
   /\bdocker\s+run\b/, /\bdocker\s+exec\b/,
-  // Package installs (can run arbitrary postinstall scripts)
-  /\bnpm\s+install\b/, /\bbun\s+add\b/, /\bpip\s+install\b/,
+  // Package installs (global installs can run arbitrary postinstall scripts)
+  /\bnpm\s+install\s+-g\b/, /\bpip\s+install\b/,
 ];
 
 export function isDangerousCommand(command: string): boolean {
@@ -540,6 +540,7 @@ export function buildQueryOptions(config: QueryConfig) {
     systemPrompt: { type: "preset" as const, preset: "claude_code" as const },
     settingSources: ["project" as const],
     tools: { type: "preset" as const, preset: "claude_code" as const },
+    allowedTools: ["WebFetch", "WebSearch", "Task"],
     permissionMode: "acceptEdits" as const,
     canUseTool: config.canUseTool,
     abortController: config.abortController,
@@ -581,6 +582,7 @@ export async function processQueryStream(
 
   let allResponses: string[] = [];
   let currentTurnText = "";
+  let currentMsgUuid = "";
 
   for await (const msg of q) {
     // Capture session ID
@@ -618,8 +620,13 @@ export async function processQueryStream(
       }
 
       if (text) {
-        // New turn detection
-        if (text.length < currentTurnText.length && currentTurnText) {
+        // Detect new turn via UUID or fallback to length heuristic
+        const msgUuid = (msg as any).uuid || "";
+        const isNewTurn = (msgUuid && currentMsgUuid && msgUuid !== currentMsgUuid) ||
+          (!msgUuid && text.length < currentTurnText.length && currentTurnText);
+        if (msgUuid) currentMsgUuid = msgUuid;
+
+        if (isNewTurn) {
           if (currentTurnText) allResponses.push(currentTurnText);
           currentTurnText = text;
         } else {

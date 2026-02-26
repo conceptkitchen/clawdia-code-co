@@ -20,6 +20,7 @@
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.50",
     "@supabase/supabase-js": "^2.45.0",
+    "@grammyjs/runner": "^2.0.3",
     "grammy": "^1.21.1",
     "groq-sdk": "^0.8.0",
     "playwright": "^1.58.2",

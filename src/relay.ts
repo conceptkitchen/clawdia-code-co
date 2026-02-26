@@ -11,6 +11,7 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import { Bot, Context, InlineKeyboard, InputFile } from "grammy";
+import { run } from "@grammyjs/runner";
 import { transcribe } from "./transcribe.ts";
 import { writeFile, mkdir, unlink } from "fs/promises";
 import { join } from "path";
@@ -168,16 +169,34 @@ async function callAgent(ctx: Context, userMessage: string): Promise<void> {
       model: currentModel,
       memoryServer,
       canUseTool: async (toolName, input) => {
-        // Dangerous Bash commands
-        if (toolName === "Bash" && DANGEROUS_PATTERNS.some(p => p.test((input as any).command || ""))) {
-          const approved = await requestTelegramApproval((input as any).command);
-          return approved
-            ? { behavior: "allow" as const, updatedInput: input }
-            : { behavior: "deny" as const, message: "User rejected this command." };
+        const inp = input as any;
+
+        // All Bash commands — dangerous approval, curl timeouts, default timeout
+        if (toolName === "Bash") {
+          let patchedCmd: string = inp.command || "";
+
+          // Dangerous command approval
+          if (DANGEROUS_PATTERNS.some(p => p.test(patchedCmd))) {
+            const approved = await requestTelegramApproval(patchedCmd);
+            if (!approved) {
+              return { behavior: "deny" as const, message: "User rejected this command." };
+            }
+          }
+
+          // Auto-inject curl timeouts to prevent indefinite hangs
+          if (patchedCmd.includes("curl") && !/--max-time|--connect-timeout|-m /.test(patchedCmd)) {
+            patchedCmd = patchedCmd.replace(/curl/, "curl --max-time 30 --connect-timeout 10");
+          }
+
+          // Default 2-minute Bash timeout
+          const timeout = inp.timeout || 120_000;
+
+          return { behavior: "allow" as const, updatedInput: { ...inp, command: patchedCmd, timeout } };
         }
+
         // Sensitive path protection for Write/Edit
-        if ((toolName === "Write" || toolName === "Edit") && isSensitivePath((input as any).file_path || "")) {
-          const approved = await requestTelegramApproval(`${toolName} → ${(input as any).file_path}`);
+        if ((toolName === "Write" || toolName === "Edit") && isSensitivePath(inp.file_path || "")) {
+          const approved = await requestTelegramApproval(`${toolName} → ${inp.file_path}`);
           return approved
             ? { behavior: "allow" as const, updatedInput: input }
             : { behavior: "deny" as const, message: "User rejected this file operation." };
@@ -195,6 +214,7 @@ async function callAgent(ctx: Context, userMessage: string): Promise<void> {
     let currentTurnText = "";
     let currentTurnSent = 0;
     let lastFlush = Date.now();
+    let currentMsgUuid = "";
 
     for await (const msg of q) {
       // Capture session ID
@@ -236,12 +256,22 @@ async function callAgent(ctx: Context, userMessage: string): Promise<void> {
         }
 
         if (text) {
-          // Detect new turn (text shorter than what we had = new assistant message after tool call)
-          if (text.length < currentTurnText.length && currentTurnText) {
-            // Save previous turn, start new one
+          // Detect new turn via UUID or fallback to length heuristic
+          const msgUuid = (msg as any).uuid || "";
+          const isNewTurn = (msgUuid && currentMsgUuid && msgUuid !== currentMsgUuid) ||
+            (!msgUuid && text.length < currentTurnText.length && currentTurnText);
+          if (msgUuid) currentMsgUuid = msgUuid;
+
+          if (isNewTurn) {
+            // Flush unsent text from previous turn before starting new one
+            const prevUnsent = currentTurnText.slice(currentTurnSent).trim();
+            if (prevUnsent) {
+              await sendResponse(ctx, prevUnsent);
+            }
             if (currentTurnText) allResponses.push(currentTurnText);
             currentTurnText = text;
             currentTurnSent = 0;
+            lastFlush = Date.now();
           } else {
             currentTurnText = text;
           }
@@ -944,11 +974,16 @@ bot.on("callback_query:data", async (ctx) => {
 
   clearTimeout(pending.timer);
   pendingApprovals.delete(id);
-  pending.resolve(action === "approve");
+  const approved = action === "approve";
+  pending.resolve(approved);
 
-  const emoji = action === "approve" ? "✅" : "❌";
-  await ctx.answerCallbackQuery({ text: `${emoji} ${action === "approve" ? "Approved" : "Rejected"}` });
-  await ctx.editMessageText(`${emoji} ${action === "approve" ? "Approved" : "Rejected"}`).catch(() => {});
+  const emoji = approved ? "✅" : "❌";
+  const label = approved ? "APPROVED" : "REJECTED";
+  await ctx.answerCallbackQuery({ text: `${emoji} ${label}` });
+  const origText = ctx.callbackQuery.message?.text || "";
+  const cmdPreview = origText.length > 200 ? origText.substring(0, 200) + "..." : origText;
+  await ctx.editMessageText(`${emoji} ${label}\n\n${cmdPreview}`).catch(() => {});
+  await ctx.reply(`${emoji} ${label} — ${approved ? "running command" : "command blocked"}`).catch(() => {});
 
   // Record feedback signal
   const snapshot: ContextSnapshot = { sessionId: sessionId || undefined, model: currentModel };
@@ -966,9 +1001,17 @@ console.log(`Brain directory: ${CLAWDIA_DIR}`);
 console.log(`Default model: ${currentModel}`);
 if (sessionId) console.log(`Resuming session: ${sessionId}`);
 
-bot.start({
-  drop_pending_updates: true,
-  onStart: () => {
-    console.log("Bot is running! (old queued messages dropped)");
-  },
-});
+await bot.api.deleteWebhook({ drop_pending_updates: true });
+await bot.init();
+const runner = run(bot);
+console.log("Bot is running! (concurrent mode, old queued messages dropped)");
+
+const stopRunner = async () => {
+  runner.isRunning() && runner.stop();
+  await releaseLock("bot");
+  process.exit(0);
+};
+process.removeAllListeners("SIGINT");
+process.removeAllListeners("SIGTERM");
+process.on("SIGINT", stopRunner);
+process.on("SIGTERM", stopRunner);

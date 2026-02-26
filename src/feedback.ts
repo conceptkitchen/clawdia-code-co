@@ -115,7 +115,7 @@ const FEEDBACK_DIR = join(CLAWDIA_DIR, "feedback", "signals");
 async function appendFeedbackLog(signals: Signal[], contextSnapshot: ContextSnapshot): Promise<void> {
   try {
     await mkdir(FEEDBACK_DIR, { recursive: true });
-    const date = new Date().toISOString().split("T")[0];
+    const date = new Date().toLocaleDateString("en-CA", { timeZone: process.env.USER_TIMEZONE || "UTC" });
     const filePath = join(FEEDBACK_DIR, `${date}.jsonl`);
     const timestamp = new Date().toISOString();
     for (const s of signals) {

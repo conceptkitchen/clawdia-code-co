@@ -55,7 +55,7 @@ function freshState(): HeartbeatState {
 }
 
 function todayStr(): string {
-  return new Date().toISOString().split("T")[0];
+  return new Date().toLocaleDateString("en-CA", { timeZone: process.env.USER_TIMEZONE || "UTC" });
 }
 
 // ============================================================

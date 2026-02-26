@@ -178,35 +178,44 @@ async function callAgent(userMessage: string): Promise<void> {
       model: currentModel,
       memoryServer,
       canUseTool: async (toolName, input) => {
-        // Dangerous Bash commands
-        if (toolName === "Bash" && isDangerousCommand((input as any).command || "")) {
-          const approved = await requestTerminalApproval((input as any).command);
-          if (approved) {
-            const signal = actionApprovedSignal();
+        const inp = input as any;
+
+        // All Bash commands — dangerous approval, curl timeouts, default timeout
+        if (toolName === "Bash") {
+          let patchedCmd: string = inp.command || "";
+
+          // Dangerous command approval
+          if (isDangerousCommand(patchedCmd)) {
+            const approved = await requestTerminalApproval(patchedCmd);
+            const signal = approved ? actionApprovedSignal() : actionRejectedSignal();
             const snapshot: ContextSnapshot = { sessionId: sessionId || undefined, model: currentModel };
             recordSignals(supabase, [signal], snapshot).catch(() => {});
-            return { behavior: "allow" as const, updatedInput: input };
-          } else {
-            const signal = actionRejectedSignal();
-            const snapshot: ContextSnapshot = { sessionId: sessionId || undefined, model: currentModel };
-            recordSignals(supabase, [signal], snapshot).catch(() => {});
-            return { behavior: "deny" as const, message: "User rejected this command." };
+            if (!approved) {
+              return { behavior: "deny" as const, message: "User rejected this command." };
+            }
           }
+
+          // Auto-inject curl timeouts to prevent indefinite hangs
+          if (patchedCmd.includes("curl") && !/--max-time|--connect-timeout|-m /.test(patchedCmd)) {
+            patchedCmd = patchedCmd.replace(/curl/, "curl --max-time 30 --connect-timeout 10");
+          }
+
+          // Default 2-minute Bash timeout
+          const timeout = inp.timeout || 120_000;
+
+          return { behavior: "allow" as const, updatedInput: { ...inp, command: patchedCmd, timeout } };
         }
+
         // Sensitive path protection for Write/Edit
-        if ((toolName === "Write" || toolName === "Edit") && isSensitivePath((input as any).file_path || "")) {
-          const approved = await requestTerminalApproval(`${toolName} → ${(input as any).file_path}`);
-          if (approved) {
-            const signal = actionApprovedSignal();
-            const snapshot: ContextSnapshot = { sessionId: sessionId || undefined, model: currentModel };
-            recordSignals(supabase, [signal], snapshot).catch(() => {});
-            return { behavior: "allow" as const, updatedInput: input };
-          } else {
-            const signal = actionRejectedSignal();
-            const snapshot: ContextSnapshot = { sessionId: sessionId || undefined, model: currentModel };
-            recordSignals(supabase, [signal], snapshot).catch(() => {});
+        if ((toolName === "Write" || toolName === "Edit") && isSensitivePath(inp.file_path || "")) {
+          const approved = await requestTerminalApproval(`${toolName} → ${inp.file_path}`);
+          const signal = approved ? actionApprovedSignal() : actionRejectedSignal();
+          const snapshot: ContextSnapshot = { sessionId: sessionId || undefined, model: currentModel };
+          recordSignals(supabase, [signal], snapshot).catch(() => {});
+          if (!approved) {
             return { behavior: "deny" as const, message: "User rejected this file operation." };
           }
+          return { behavior: "allow" as const, updatedInput: input };
         }
         return { behavior: "allow" as const, updatedInput: input };
       },
@@ -218,6 +227,7 @@ async function callAgent(userMessage: string): Promise<void> {
     let allResponses: string[] = [];
     let currentTurnText = "";
     let currentTurnPrinted = 0;
+    let currentMsgUuid = "";
 
     // Start streaming indicator
     process.stdout.write(`\n${c.dim("Agent: ")}`);
@@ -270,8 +280,13 @@ async function callAgent(userMessage: string): Promise<void> {
         }
 
         if (text) {
-          // New turn detection
-          if (text.length < currentTurnText.length && currentTurnText) {
+          // Detect new turn via UUID or fallback to length heuristic
+          const msgUuid = (msg as any).uuid || "";
+          const isNewTurn = (msgUuid && currentMsgUuid && msgUuid !== currentMsgUuid) ||
+            (!msgUuid && text.length < currentTurnText.length && currentTurnText);
+          if (msgUuid) currentMsgUuid = msgUuid;
+
+          if (isNewTurn) {
             if (currentTurnText) allResponses.push(currentTurnText);
             // Print separator for new turn
             process.stdout.write(`\n${c.dim("---")}\n`);

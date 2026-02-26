@@ -37,13 +37,13 @@ async function ouraFetch(endpoint: string, params?: Record<string, string>): Pro
 }
 
 function todayStr(): string {
-  return new Date().toISOString().split("T")[0];
+  return new Date().toLocaleDateString("en-CA", { timeZone: process.env.USER_TIMEZONE || "UTC" });
 }
 
 function yesterdayStr(): string {
   const d = new Date();
   d.setDate(d.getDate() - 1);
-  return d.toISOString().split("T")[0];
+  return d.toLocaleDateString("en-CA", { timeZone: process.env.USER_TIMEZONE || "UTC" });
 }
 
 export async function getOuraSleep(): Promise<string> {
